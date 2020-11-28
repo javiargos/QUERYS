@@ -1,0 +1,139 @@
+﻿QUERYS JAVIER ARGOS
+
+Análisis exploratorio del dataset de taxis de NYC para el año 2018
+¿Cuántos viajes se hicieron en este mes ?
+SELECT COUNT(*)
+FROM
+  `bigquery-public-data.new_york_taxi_trips.tlc_yellow_trips_2018`
+WHERE
+  trip_distance > 0
+AND fare_amount/trip_distance BETWEEN 2 AND 10
+AND dropoff_datetime > pickup_datetime
+AND pickup_datetime BETWEEN '2018-11-01T00:00:00' AND '2018-11-30T23:59:59'
+¿Y el puente de todos los difuntos / santos del 2018?
+SELECT COUNT(*)
+FROM
+  `bigquery-public-data.new_york_taxi_trips.tlc_yellow_trips_2018`
+WHERE
+  trip_distance > 0
+AND fare_amount/trip_distance BETWEEN 2 AND 10
+AND dropoff_datetime > pickup_datetime
+AND pickup_datetime BETWEEN '2018-10-31T00:00:00' AND '2018-11-02T23:59:59'
+¿En el2T del 2018 cuantos viajes hicieron?
+SELECT COUNT(*)
+FROM
+  `bigquery-public-data.new_york_taxi_trips.tlc_yellow_trips_2018`
+WHERE
+  trip_distance > 0
+AND fare_amount/trip_distance BETWEEN 2 AND 10
+AND dropoff_datetime > pickup_datetime
+AND pickup_datetime BETWEEN '2018-04-01T00:00:00' AND '2018-06-30T23:59:59'
+
+
+¿Cuál fue la velocidad promedio en el mes de enero 2018?
+SELECT 
+ROUND (AVG(trip_distance/TIMESTAMP_DIFF(TIMESTAMP(dropoff_datetime),TIMESTAMP(pickup_datetime),SECOND))*3600,1) speed
+FROM
+  `bigquery-public-data.new_york_taxi_trips.tlc_yellow_trips_2018`
+WHERE
+  trip_distance > 0
+AND fare_amount/trip_distance BETWEEN 2 AND 10
+AND dropoff_datetime > pickup_datetime
+AND pickup_datetime BETWEEN '2018-01-01T00:00:00' AND '2018-01-31T23:59:59'
+ORDER BY 1
+¿Cuál fue la distancia promedio en el mes de enero 2018? 
+SELECT 
+ROUND (AVG(trip_distance)) distance
+FROM
+  `bigquery-public-data.new_york_taxi_trips.tlc_yellow_trips_2018`
+WHERE
+  trip_distance > 0
+AND fare_amount/trip_distance BETWEEN 2 AND 10
+AND dropoff_datetime > pickup_datetime
+AND pickup_datetime BETWEEN '2018-01-01T00:00:00' AND '2018-01-31T23:59:59'
+ORDER BY 1
+Visualizar tiempo y speed
+SELECT
+EXTRACT (HOUR FROM pickup_datetime) hour,
+ROUND (AVG(trip_distance/DATETIME_DIFF(dropoff_datetime,pickup_datetime,SECOND))*3600,1) speed
+FROM
+  `bigquery-public-data.new_york_taxi_trips.tlc_yellow_trips_2018`
+WHERE
+  trip_distance > 0
+AND fare_amount/trip_distance BETWEEN 2 AND 10
+AND dropoff_datetime > pickup_datetime
+GROUP BY 1
+¿Cual es la velocidad máxima ?
+SELECT max(speed) FROM `proven-fx-296819._8fb12d7fceb554621585ed1fce1e7abc47f21485.anon2325fd607569f756584ede92c50927a36067bde5` LIMIT 1000
+MACHINE LEARNING
+WITH params AS (SELECT 1 AS TRAIN,2 AS EVAL),
+     daynames AS
+     (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+      taxitrips AS (SELECT
+      (tolls_amount + fare_amount) AS total_fare,
+      daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+      EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+      pickup_longitude AS pickuplon,
+      pickup_latitude AS pickuplat,
+      dropoff_longitude AS dropofflon,
+      dropoff_latitude AS dropofflat,
+      passenger_count AS passengers
+      FROM `nyc-tlc.yellow.trips`, daynames, params
+      WHERE 
+      trip_distance > 0 AND fare_amount > 0
+      AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.TRAIN)
+  SELECT *
+  FROM taxitrips
+ENTRENAMIENTO
+CREATE or REPLACE MODEL taxi.taxifare_model
+OPTIONS
+  (model_type='linear_reg', labels=['total_fare']) AS
+WITH params AS (SELECT 1 AS TRAIN,2 AS EVAL),
+     daynames AS
+     (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+      taxitrips AS (SELECT
+      (tolls_amount + fare_amount) AS total_fare,
+      daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+      EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+      pickup_longitude AS pickuplon,
+      pickup_latitude AS pickuplat,
+      dropoff_longitude AS dropofflon,
+      dropoff_latitude AS dropofflat,
+      passenger_count AS passengers
+      FROM `nyc-tlc.yellow.trips`, daynames, params
+      WHERE 
+      trip_distance > 0 AND fare_amount > 0
+      AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.TRAIN)
+  SELECT *
+  FROM taxitrips
+EVALUACIÓN
+SELECT
+  SQRT(mean_squared_error) AS rmse
+FROM
+  ML.EVALUATE(MODEL taxi.taxifare_model,
+  (
+  WITH params AS (
+    SELECT 1 AS TRAIN,2 AS EVAL),
+  daynames AS
+    (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+  taxitrips AS (
+  SELECT
+    (tolls_amount + fare_amount) AS total_fare,
+    daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+    EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+    pickup_longitude AS pickuplon,
+    pickup_latitude AS pickuplat,
+    dropoff_longitude AS dropofflon,
+    dropoff_latitude AS dropofflat,
+    passenger_count AS passengers
+  FROM
+    `nyc-tlc.yellow.trips`, daynames, params
+  WHERE
+    trip_distance > 0 AND fare_amount > 0
+    AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.EVAL)
+  SELECT *
+  FROM taxitrips))
+
+
+Compara la pérdida en el entrenamiento VS la evaluación
+ SELECT * FROM ML.TRAINING_INFO(model `taxi.taxifare_model`)
